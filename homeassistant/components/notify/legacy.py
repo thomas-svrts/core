@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import asyncio
 from functools import partial
-import logging
 from typing import Any, cast
 
-import homeassistant.components.persistent_notification as pn
 from homeassistant.const import CONF_DESCRIPTION, CONF_NAME
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -24,13 +22,10 @@ from .const import (
     ATTR_TARGET,
     ATTR_TITLE,
     DOMAIN,
+    LOGGER,
     NOTIFY_SERVICE_SCHEMA,
-    PERSISTENT_NOTIFICATION_SERVICE_SCHEMA,
     SERVICE_NOTIFY,
-    SERVICE_PERSISTENT_NOTIFICATION,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 CONF_FIELDS = "fields"
 NOTIFY_SERVICES = "notify_services"
@@ -39,20 +34,6 @@ NOTIFY_SERVICES = "notify_services"
 async def async_setup_legacy(hass: HomeAssistant, config: ConfigType) -> None:
     """Set up legacy notify services."""
     hass.data.setdefault(NOTIFY_SERVICES, {})
-
-    async def persistent_notification(service: ServiceCall) -> None:
-        """Send notification via the built-in persistsent_notify integration."""
-        message = service.data[ATTR_MESSAGE]
-        message.hass = hass
-        _check_templates_warn(hass, message)
-
-        title = None
-        if title_tpl := service.data.get(ATTR_TITLE):
-            _check_templates_warn(hass, title_tpl)
-            title_tpl.hass = hass
-            title = title_tpl.async_render(parse_result=False)
-
-        pn.async_create(hass, message.async_render(parse_result=False), title)
 
     async def async_setup_platform(
         integration_name: str,
@@ -68,11 +49,11 @@ async def async_setup_legacy(hass: HomeAssistant, config: ConfigType) -> None:
         )
 
         if platform is None:
-            _LOGGER.error("Unknown notification service specified")
+            LOGGER.error("Unknown notification service specified")
             return
 
         full_name = f"{DOMAIN}.{integration_name}"
-        _LOGGER.info("Setting up %s", full_name)
+        LOGGER.info("Setting up %s", full_name)
         with async_start_setup(hass, [full_name]):
             notify_service = None
             try:
@@ -91,14 +72,14 @@ async def async_setup_legacy(hass: HomeAssistant, config: ConfigType) -> None:
                     # Platforms can decide not to create a service based
                     # on discovery data.
                     if discovery_info is None:
-                        _LOGGER.error(
+                        LOGGER.error(
                             "Failed to initialize notification service %s",
                             integration_name,
                         )
                     return
 
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Error setting up platform %s", integration_name)
+                LOGGER.exception("Error setting up platform %s", integration_name)
                 return
 
             if discovery_info is None:
@@ -118,13 +99,6 @@ async def async_setup_legacy(hass: HomeAssistant, config: ConfigType) -> None:
             )
             hass.config.components.add(f"{DOMAIN}.{integration_name}")
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_PERSISTENT_NOTIFICATION,
-        persistent_notification,
-        schema=PERSISTENT_NOTIFICATION_SERVICE_SCHEMA,
-    )
-
     setup_tasks = [
         asyncio.create_task(async_setup_platform(integration_name, p_config))
         for integration_name, p_config in config_per_platform(config, DOMAIN)
@@ -143,13 +117,13 @@ async def async_setup_legacy(hass: HomeAssistant, config: ConfigType) -> None:
 
 
 @callback
-def _check_templates_warn(hass: HomeAssistant, tpl: template.Template) -> None:
+def check_templates_warn(hass: HomeAssistant, tpl: template.Template) -> None:
     """Warn user that passing templates to notify service is deprecated."""
     if tpl.is_static or hass.data.get("notify_template_warned"):
         return
 
     hass.data["notify_template_warned"] = True
-    _LOGGER.warning(
+    LOGGER.warning(
         "Passing templates to notify service is deprecated and will be removed in 2021.12. "
         "Automations and scripts handle templates automatically"
     )
@@ -231,7 +205,7 @@ class BaseNotificationService:
         title = service.data.get(ATTR_TITLE)
 
         if title:
-            _check_templates_warn(self.hass, title)
+            check_templates_warn(self.hass, title)
             title.hass = self.hass
             kwargs[ATTR_TITLE] = title.async_render(parse_result=False)
 
@@ -240,7 +214,7 @@ class BaseNotificationService:
         elif service.data.get(ATTR_TARGET) is not None:
             kwargs[ATTR_TARGET] = service.data.get(ATTR_TARGET)
 
-        _check_templates_warn(self.hass, message)
+        check_templates_warn(self.hass, message)
         message.hass = self.hass
         kwargs[ATTR_MESSAGE] = message.async_render(parse_result=False)
         kwargs[ATTR_DATA] = service.data.get(ATTR_DATA)

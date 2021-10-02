@@ -1,4 +1,6 @@
 """Provide common notify constants."""
+import logging
+
 import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
@@ -15,6 +17,8 @@ ATTR_TARGET = "target"
 ATTR_TITLE = "title"
 
 DOMAIN = "notify"
+
+LOGGER = logging.getLogger(__package__)
 
 SERVICE_NOTIFY = "notify"
 SERVICE_PERSISTENT_NOTIFICATION = "persistent_notification"
